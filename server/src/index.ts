@@ -1,5 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { DEFAULT_MODELS, LLMService, type LLMProvider, isProvider } from './llm-service.js';
+import {
+  DEFAULT_MODELS,
+  GeneratedWebpageFormatError,
+  LLMService,
+  type GenerateWebpageRequest,
+  type LLMProvider,
+  isProvider
+} from './llm-service.js';
 
 interface StreamRouteInput {
   provider: LLMProvider;
@@ -9,6 +16,8 @@ interface StreamRouteInput {
   temperature?: number;
   maxTokens?: number;
 }
+
+type GenerateWebpageRouteInput = GenerateWebpageRequest;
 
 const port = Number(process.env.PORT) || 3001;
 const llmService = new LLMService();
@@ -56,6 +65,11 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/llm/generate-webpage') {
+    await handleGenerateWebpageRoute(req, res, requestId);
+    return;
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/llm/providers') {
     res.setHeader('Content-Type', 'application/json');
     res.end(
@@ -75,7 +89,11 @@ const server = createServer(async (req, res) => {
       method: req.method,
       path: req.url,
       timestamp: new Date().toISOString(),
-      endpoints: ['POST /api/llm/stream', 'GET /api/llm/providers']
+      endpoints: [
+        'POST /api/llm/stream',
+        'POST /api/llm/generate-webpage',
+        'GET /api/llm/providers'
+      ]
     })
   );
 });
@@ -177,6 +195,91 @@ async function handleLLMStreamRoute(
   }
 }
 
+async function handleGenerateWebpageRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  requestId: string
+): Promise<void> {
+  const startedAt = Date.now();
+  let payload: unknown;
+  try {
+    payload = await readJsonBody(req);
+  } catch (error) {
+    logWarn('generate.bad_request_body', {
+      requestId,
+      error: errorMessage(error, 'Invalid request body.')
+    });
+    sendJsonError(res, 400, errorMessage(error, 'Invalid request body.'));
+    return;
+  }
+
+  let request: GenerateWebpageRouteInput;
+  try {
+    request = parseGenerateWebpageRouteInput(payload);
+  } catch (error) {
+    logWarn('generate.bad_request_payload', {
+      requestId,
+      error: errorMessage(error, 'Invalid webpage generation request.')
+    });
+    sendJsonError(res, 400, errorMessage(error, 'Invalid webpage generation request.'));
+    return;
+  }
+
+  const controller = new AbortController();
+  req.on('close', () => {
+    if (!controller.signal.aborted) {
+      logWarn('generate.client_disconnected', { requestId });
+      controller.abort();
+    }
+  });
+
+  logInfo('generate.start', {
+    requestId,
+    provider: request.provider,
+    model: request.model,
+    promptLength: request.prompt.length
+  });
+
+  try {
+    const webpage = await llmService.generateWebpage(request, controller.signal);
+    if (controller.signal.aborted || res.writableEnded) {
+      return;
+    }
+
+    logInfo('generate.complete', {
+      requestId,
+      provider: request.provider,
+      model: request.model,
+      durationMs: Date.now() - startedAt,
+      htmlLength: webpage.html.length,
+      cssLength: webpage.css.length,
+      jsLength: webpage.js.length
+    });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(webpage));
+  } catch (error) {
+    if (controller.signal.aborted || res.writableEnded) {
+      return;
+    }
+
+    const message = errorMessage(error, 'Webpage generation failed.');
+    const isFormatError = error instanceof GeneratedWebpageFormatError;
+    const statusCode = isFormatError ? 422 : 502;
+
+    logError('generate.error', {
+      requestId,
+      provider: request.provider,
+      model: request.model,
+      durationMs: Date.now() - startedAt,
+      statusCode,
+      error: message
+    });
+
+    sendJsonError(res, statusCode, message);
+  }
+}
+
 function parseStreamRouteInput(payload: unknown): StreamRouteInput {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Body must be a JSON object.');
@@ -194,6 +297,42 @@ function parseStreamRouteInput(payload: unknown): StreamRouteInput {
   }
 
   const prompt = parseNonEmptyString(body.prompt, 'prompt');
+  const model = parseOptionalString(body.model, 'model') || resolveDefaultModel(provider);
+  const system = parseOptionalString(body.system, 'system');
+  const temperature = parseOptionalFiniteNumber(body.temperature, 'temperature');
+  const maxTokens = parseOptionalPositiveInt(body.maxTokens, 'maxTokens');
+
+  return {
+    provider,
+    model,
+    prompt,
+    system,
+    temperature,
+    maxTokens
+  };
+}
+
+function parseGenerateWebpageRouteInput(payload: unknown): GenerateWebpageRouteInput {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Body must be a JSON object.');
+  }
+
+  const body = payload as Record<string, unknown>;
+  const providerRaw = body.provider;
+  if (providerRaw !== undefined && !isProvider(providerRaw)) {
+    throw new Error('provider must be one of: openai, anthropic, gemini.');
+  }
+
+  const provider = providerRaw === undefined ? defaultProvider : providerRaw;
+  if (!isProvider(provider)) {
+    throw new Error('provider must be one of: openai, anthropic, gemini.');
+  }
+
+  const prompt = parseNonEmptyString(body.prompt, 'prompt');
+  if (prompt.length > 4_000) {
+    throw new Error('prompt must be 4000 characters or fewer.');
+  }
+
   const model = parseOptionalString(body.model, 'model') || resolveDefaultModel(provider);
   const system = parseOptionalString(body.system, 'system');
   const temperature = parseOptionalFiniteNumber(body.temperature, 'temperature');

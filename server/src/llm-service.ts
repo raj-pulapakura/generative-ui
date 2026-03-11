@@ -11,10 +11,44 @@ export interface StreamTextRequest {
   maxTokens?: number;
 }
 
+export interface GenerateWebpageRequest {
+  provider: LLMProvider;
+  model: string;
+  prompt: string;
+  system?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+export interface GeneratedWebpage {
+  html: string;
+  css: string;
+  js: string;
+}
+
+export class GeneratedWebpageFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GeneratedWebpageFormatError';
+  }
+}
+
 interface SSEEvent {
   event?: string;
   data: string;
 }
+
+const GENERATED_WEBPAGE_SYSTEM_PROMPT = [
+  'You generate runnable single-file web apps.',
+  'Output must be valid JSON with exactly these top-level string keys: html, css, js.',
+  'Do not wrap in markdown code fences.',
+  'HTML should be body-safe markup only (no <html>, <head>, or <body> tags).',
+  'CSS should style the generated HTML only.',
+  'JavaScript should make the page interactive and run in a browser without external libraries.'
+].join(' ');
+
+const GENERATED_WEBPAGE_MAX_CHARS = 150_000;
+const GENERATED_WEBPAGE_PART_MAX_CHARS = 60_000;
 
 export const DEFAULT_MODELS: Record<LLMProvider, string> = {
   openai: process.env.OPENAI_MODEL?.trim() || 'gpt-5-mini',
@@ -39,6 +73,53 @@ export class LLMService {
     }
 
     yield* this.streamGemini(request, signal);
+  }
+
+  async generateWebpage(
+    request: GenerateWebpageRequest,
+    signal?: AbortSignal
+  ): Promise<GeneratedWebpage> {
+    const mockedResponse = process.env.LLM_GENERATE_WEBPAGE_MOCK_RESPONSE?.trim();
+    if (mockedResponse) {
+      return parseGeneratedWebpagePayload(mockedResponse);
+    }
+
+    const prompt = buildGeneratedWebpagePrompt(request.prompt);
+    const system = request.system
+      ? `${GENERATED_WEBPAGE_SYSTEM_PROMPT}\n\nAdditional constraints from caller:\n${request.system}`
+      : GENERATED_WEBPAGE_SYSTEM_PROMPT;
+
+    const output = await this.collectText(
+      {
+        provider: request.provider,
+        model: request.model,
+        prompt,
+        system,
+        temperature: request.temperature,
+        maxTokens: request.maxTokens
+      },
+      signal
+    );
+
+    return parseGeneratedWebpagePayload(output);
+  }
+
+  private async collectText(request: StreamTextRequest, signal?: AbortSignal): Promise<string> {
+    let text = '';
+    for await (const delta of this.streamText(request, signal)) {
+      text += delta;
+      if (text.length > GENERATED_WEBPAGE_MAX_CHARS) {
+        throw new GeneratedWebpageFormatError(
+          `Generated webpage output exceeded ${GENERATED_WEBPAGE_MAX_CHARS} characters.`
+        );
+      }
+    }
+
+    if (text.trim().length === 0) {
+      throw new GeneratedWebpageFormatError('Model returned empty webpage output.');
+    }
+
+    return text;
   }
 
   private async *streamOpenAI(
@@ -368,4 +449,82 @@ function parseSSEEvent(rawEvent: string): SSEEvent | null {
     event: eventName,
     data: dataLines.join('\n')
   };
+}
+
+function buildGeneratedWebpagePrompt(userPrompt: string): string {
+  return [
+    'Build a self-contained interactive webpage for this request:',
+    userPrompt.trim(),
+    '',
+    'Return JSON only with keys: html, css, js.',
+    'Do not include explanations.'
+  ].join('\n');
+}
+
+export function parseGeneratedWebpagePayload(rawOutput: string): GeneratedWebpage {
+  const payloadText = extractJsonObject(rawOutput);
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(payloadText);
+  } catch {
+    throw new GeneratedWebpageFormatError('Model output was not valid JSON.');
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new GeneratedWebpageFormatError('Model output must be a JSON object.');
+  }
+
+  const candidate = parsed as Record<string, unknown>;
+  const html = asNonEmptyString(candidate.html, 'html');
+  const css = asNonEmptyString(candidate.css, 'css');
+  const js = asNonEmptyString(candidate.js, 'js');
+
+  enforceMaxLength(html, 'html');
+  enforceMaxLength(css, 'css');
+  enforceMaxLength(js, 'js');
+
+  return { html, css, js };
+}
+
+function extractJsonObject(rawOutput: string): string {
+  const trimmed = rawOutput.trim();
+  if (trimmed.length === 0) {
+    throw new GeneratedWebpageFormatError('Model output was empty.');
+  }
+
+  if (trimmed.startsWith('```')) {
+    const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    if (fenced?.[1]) {
+      return fenced[1].trim();
+    }
+  }
+
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return trimmed;
+  }
+
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+
+  throw new GeneratedWebpageFormatError('Model output did not include a JSON object.');
+}
+
+function asNonEmptyString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new GeneratedWebpageFormatError(`${fieldName} must be a non-empty string.`);
+  }
+
+  return value.trim();
+}
+
+function enforceMaxLength(value: string, fieldName: string): void {
+  if (value.length > GENERATED_WEBPAGE_PART_MAX_CHARS) {
+    throw new GeneratedWebpageFormatError(
+      `${fieldName} exceeds ${GENERATED_WEBPAGE_PART_MAX_CHARS} characters.`
+    );
+  }
 }
