@@ -3,6 +3,8 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile.dev
+    env_file:
+      - ./server/.env
     environment:
       PORT: 3001
       CHOKIDAR_USEPOLLING: "true"
