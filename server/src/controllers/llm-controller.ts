@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
-import { DEFAULT_MODELS, GeneratedWebpageFormatError, LLMService, type LLMProvider } from '../services/llm/llm-service.js';
+import { DEFAULT_MODELS, LLMService, type LLMProvider } from '../services/llm/llm-service.js';
+import { GeneratedWebpageFormatError, WebpageGenerationService } from '../services/webpage-generation/webpage-generation-service.js';
 import { HttpError } from '../lib/http-error.js';
 import { logError, logInfo, logWarn } from '../lib/logger.js';
 import { parseGenerateWebpageRouteInput, parseStreamRouteInput } from '../validators/llm-request-validator.js';
@@ -12,6 +13,7 @@ interface LlmControllerOptions {
 export class LlmController {
   constructor(
     private readonly llmService: LLMService,
+    private readonly webpageGenerationService: WebpageGenerationService,
     private readonly options: LlmControllerOptions
   ) {}
 
@@ -24,6 +26,7 @@ export class LlmController {
   };
 
   readonly stream = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const streamStartedAt = Date.now();
     let requestInput;
     try {
       requestInput = parseStreamRouteInput(req.body, this.options);
@@ -50,9 +53,20 @@ export class LlmController {
 
     try {
       let totalChars = 0;
+      let firstTokenLatencyMs: number | null = null;
       for await (const delta of this.llmService.streamText(requestInput, controller.signal)) {
         if (controller.signal.aborted || res.writableEnded) {
           return;
+        }
+
+        if (firstTokenLatencyMs === null) {
+          firstTokenLatencyMs = Date.now() - streamStartedAt;
+          logInfo('stream.first_token', {
+            requestId: req.requestId,
+            provider: requestInput.provider,
+            model: requestInput.model,
+            firstTokenLatencyMs
+          });
         }
 
         totalChars += delta.length;
@@ -60,12 +74,17 @@ export class LlmController {
       }
 
       if (!res.writableEnded) {
+        const streamLatencyMs = Date.now() - streamStartedAt;
+        const routeLatencyMs = Date.now() - req.startedAt;
         logInfo('stream.complete', {
           requestId: req.requestId,
           provider: requestInput.provider,
           model: requestInput.model,
           outputChars: totalChars,
-          durationMs: Date.now() - req.startedAt
+          durationMs: routeLatencyMs,
+          routeLatencyMs,
+          streamLatencyMs,
+          firstTokenLatencyMs
         });
         res.write('event: done\ndata: {}\n\n');
         res.end();
@@ -76,11 +95,15 @@ export class LlmController {
       }
 
       const message = errorMessage(error, 'Stream failed.');
+      const streamLatencyMs = Date.now() - streamStartedAt;
+      const routeLatencyMs = Date.now() - req.startedAt;
       logError('stream.error', {
         requestId: req.requestId,
         provider: requestInput.provider,
         model: requestInput.model,
-        durationMs: Date.now() - req.startedAt,
+        durationMs: routeLatencyMs,
+        routeLatencyMs,
+        streamLatencyMs,
         error: message
       });
       res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
@@ -93,6 +116,7 @@ export class LlmController {
     res: Response,
     next: NextFunction
   ): Promise<void> => {
+    const generationStartedAt = Date.now();
     let requestInput;
     try {
       requestInput = parseGenerateWebpageRouteInput(req.body, this.options);
@@ -108,20 +132,25 @@ export class LlmController {
       requestId: req.requestId,
       provider: requestInput.provider,
       model: requestInput.model,
-      promptLength: requestInput.prompt.length
+      promptLength: requestInput.prompt.length,
+      maxTokens: requestInput.maxTokens
     });
 
     try {
-      const webpage = await this.llmService.generateWebpage(requestInput, controller.signal);
+      const webpage = await this.webpageGenerationService.generateWebpage(requestInput, controller.signal);
       if (controller.signal.aborted || res.writableEnded) {
         return;
       }
 
+      const generationLatencyMs = Date.now() - generationStartedAt;
+      const routeLatencyMs = Date.now() - req.startedAt;
       logInfo('generate.complete', {
         requestId: req.requestId,
         provider: requestInput.provider,
         model: requestInput.model,
-        durationMs: Date.now() - req.startedAt,
+        durationMs: routeLatencyMs,
+        routeLatencyMs,
+        generationLatencyMs,
         htmlLength: webpage.html.length,
         cssLength: webpage.css.length,
         jsLength: webpage.js.length
@@ -135,11 +164,15 @@ export class LlmController {
 
       const message = errorMessage(error, 'Webpage generation failed.');
       const statusCode = error instanceof GeneratedWebpageFormatError ? 422 : 502;
+      const generationLatencyMs = Date.now() - generationStartedAt;
+      const routeLatencyMs = Date.now() - req.startedAt;
       logError('generate.error', {
         requestId: req.requestId,
         provider: requestInput.provider,
         model: requestInput.model,
-        durationMs: Date.now() - req.startedAt,
+        durationMs: routeLatencyMs,
+        routeLatencyMs,
+        generationLatencyMs,
         statusCode,
         error: message
       });

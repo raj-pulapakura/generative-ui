@@ -14,12 +14,14 @@ export function requestContextMiddleware(req: Request, res: Response, next: Next
   });
 
   res.on('finish', () => {
+    const latencyMs = Date.now() - req.startedAt;
     logInfo('request.finish', {
       requestId: req.requestId,
       method: req.method,
       path: req.path,
       statusCode: res.statusCode,
-      durationMs: Date.now() - req.startedAt
+      durationMs: latencyMs,
+      latencyMs
     });
   });
 

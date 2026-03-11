@@ -7,6 +7,7 @@ import { notFoundHandler } from './middleware/not-found.js';
 import { requestContextMiddleware } from './middleware/request-context.js';
 import { createLlmRoutes } from './routes/llm-routes.js';
 import { DEFAULT_MODELS, LLMService } from './services/llm/llm-service.js';
+import { WebpageGenerationService } from './services/webpage-generation/webpage-generation-service.js';
 
 const API_ENDPOINTS = [
   'POST /api/llm/stream',
@@ -17,7 +18,8 @@ const API_ENDPOINTS = [
 export function createApp(config: AppConfig): Express {
   const app = express();
   const llmService = new LLMService();
-  const controller = new LlmController(llmService, {
+  const webpageGenerationService = new WebpageGenerationService(llmService);
+  const controller = new LlmController(llmService, webpageGenerationService, {
     defaultProvider: config.defaultProvider,
     modelOverride: config.modelOverride
   });
