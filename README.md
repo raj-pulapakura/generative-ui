@@ -92,8 +92,3 @@ Response body:
 - `cd server && npm test`
 - `cd server && npm run build`
 - `cd web && npm run build`
-
-## Notes
-
-- The frontend now points directly to the Generative UI Builder on `/`.
-- For low-latency synchronous generation, use non-pro models (for example `gpt-5.4`).
