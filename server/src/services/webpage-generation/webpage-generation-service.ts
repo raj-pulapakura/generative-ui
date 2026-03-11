@@ -1,4 +1,5 @@
 import type { StreamTextRequest } from '../llm/llm-service.js';
+import { createGeminiClientFromEnv } from '../llm/gemini-client.js';
 
 export interface GenerateWebpageRequest {
   provider: StreamTextRequest['provider'];
@@ -43,13 +44,14 @@ const GENERATED_WEBPAGE_SYSTEM_PROMPT = [
 
 const GENERATED_WEBPAGE_MAX_CHARS = 150_000;
 const GENERATED_WEBPAGE_PART_MAX_CHARS = 60_000;
-const GENERATED_WEBPAGE_DEFAULT_MAX_TOKENS = 4_096;
+const GENERATED_WEBPAGE_DEFAULT_MAX_TOKENS = 16_384;
 const GENERATED_WEBPAGE_OPENAI_DEFAULT_MAX_TOKENS = 8_192;
 const GENERATED_WEBPAGE_OPENAI_RETRY_MAX_TOKENS = 16_384;
 const GENERATED_WEBPAGE_OPENAI_REASONING_EFFORT = 'medium'; // this effects output quality (default value is medium)
 const GENERATED_WEBPAGE_OPENAI_VERBOSITY = 'medium'; // also effects output quality (default value is medium)
 const GENERATED_WEBPAGE_ANTHROPIC_DEFAULT_MAX_TOKENS = 8_192;
 const GENERATED_WEBPAGE_ANTHROPIC_RETRY_MAX_TOKENS = 16_384;
+const GENERATED_WEBPAGE_GEMINI_RETRY_MAX_TOKENS = 65_535;
 const GENERATED_WEBPAGE_RETRY_CONCISION_HINT =
   'Retry requirement: keep the implementation concise. Avoid comments and keep total HTML/CSS/JS under roughly 12,000 characters.';
 const WEBPAGE_OUTPUT_SCHEMA = {
@@ -108,6 +110,19 @@ export class WebpageGenerationService {
       );
     }
 
+    if (request.provider === 'gemini') {
+      return this.generateGeminiStructuredWebpageWithRetry(
+        {
+          ...request,
+          system,
+          prompt,
+          maxTokens,
+          hasUserDefinedMaxTokens
+        },
+        signal
+      );
+    }
+
     const output = await this.collectText(
       {
         provider: request.provider,
@@ -121,6 +136,53 @@ export class WebpageGenerationService {
     );
 
     return parseGeneratedWebpagePayload(output);
+  }
+
+  private async generateGeminiStructuredWebpageWithRetry(
+    request: GenerateWebpageRequest & {
+      prompt: string;
+      system?: string;
+      maxTokens: number;
+      hasUserDefinedMaxTokens: boolean;
+    },
+    signal?: AbortSignal
+  ): Promise<GeneratedWebpage> {
+    let attempt = {
+      ...request
+    };
+
+    const retrySystem = request.system
+      ? `${request.system}\n\n${GENERATED_WEBPAGE_RETRY_CONCISION_HINT}`
+      : GENERATED_WEBPAGE_RETRY_CONCISION_HINT;
+
+    while (true) {
+      try {
+        return await this.generateGeminiStructuredWebpage(attempt, signal);
+      } catch (error) {
+        if (!(error instanceof GeneratedWebpageMaxTokensError)) {
+          throw error;
+        }
+
+        if (request.hasUserDefinedMaxTokens) {
+          throw new GeneratedWebpageFormatError(
+            `Gemini hit maxOutputTokens (${attempt.maxTokens}) before completing structured JSON output. Increase maxTokens or simplify the prompt.`
+          );
+        }
+
+        const retryMaxTokens = Math.min(attempt.maxTokens * 2, GENERATED_WEBPAGE_GEMINI_RETRY_MAX_TOKENS);
+        if (retryMaxTokens <= attempt.maxTokens) {
+          throw new GeneratedWebpageFormatError(
+            `Gemini hit maxOutputTokens (${attempt.maxTokens}) before completing structured JSON output.`
+          );
+        }
+
+        attempt = {
+          ...attempt,
+          maxTokens: retryMaxTokens,
+          system: retrySystem
+        };
+      }
+    }
   }
 
   private async generateOpenAIStructuredWebpageWithRetry(
@@ -358,6 +420,62 @@ export class WebpageGenerationService {
 
     if (text.length === 0) {
       throw new GeneratedWebpageFormatError('Anthropic returned no text content.');
+    }
+
+    return parseGeneratedWebpagePayload(text);
+  }
+
+  private async generateGeminiStructuredWebpage(
+    request: GenerateWebpageRequest & {
+      prompt: string;
+      system?: string;
+      maxTokens: number;
+    },
+    signal?: AbortSignal
+  ): Promise<GeneratedWebpage> {
+    const client = createGeminiClientFromEnv();
+
+    let response;
+    try {
+      response = await client.models.generateContent({
+        model: request.model,
+        contents: request.prompt,
+        config: {
+          systemInstruction: request.system,
+          temperature: request.temperature,
+          maxOutputTokens: request.maxTokens,
+          thinkingConfig: { thinkingBudget: 0 },
+          responseMimeType: 'application/json',
+          responseJsonSchema: WEBPAGE_OUTPUT_SCHEMA,
+          abortSignal: signal
+        }
+      });
+    } catch (error) {
+      const detail = error instanceof Error && error.message.length > 0 ? error.message : 'Unknown error.';
+      throw new Error(`Gemini request failed: ${detail}`);
+    }
+
+    const blockReason = response.promptFeedback?.blockReason;
+    if (typeof blockReason === 'string' && blockReason.length > 0) {
+      throw new GeneratedWebpageFormatError(`Gemini blocked this generation request: ${blockReason}.`);
+    }
+
+    const finishReason = response.candidates?.[0]?.finishReason;
+    if (finishReason === 'MAX_TOKENS') {
+      throw new GeneratedWebpageMaxTokensError(
+        `Gemini hit maxOutputTokens (${request.maxTokens}) before completing structured JSON output.`
+      );
+    }
+
+    if (typeof finishReason === 'string' && finishReason.length > 0 && finishReason !== 'STOP') {
+      throw new GeneratedWebpageFormatError(
+        `Gemini did not complete structured generation (finishReason: ${finishReason}).`
+      );
+    }
+
+    const text = response.text?.trim() ?? '';
+    if (text.length === 0) {
+      throw new GeneratedWebpageFormatError('Gemini returned no text content.');
     }
 
     return parseGeneratedWebpagePayload(text);

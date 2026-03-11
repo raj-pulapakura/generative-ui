@@ -1,3 +1,5 @@
+import { createGeminiClientFromEnv } from './gemini-client.js';
+
 export const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'gemini'] as const;
 
 export type LLMProvider = (typeof SUPPORTED_PROVIDERS)[number];
@@ -181,117 +183,48 @@ export class LLMService {
     request: StreamTextRequest,
     signal?: AbortSignal
   ): AsyncGenerator<string> {
-    const apiKey = this.requireApiKey(process.env.GEMINI_API_KEY, 'GEMINI_API_KEY');
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(request.model)}:streamGenerateContent?alt=sse`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey
-      },
-      body: JSON.stringify({
-        systemInstruction: request.system
-          ? {
-              parts: [{ text: request.system }]
-            }
-          : undefined,
-        generationConfig: {
+    const client = createGeminiClientFromEnv();
+
+    try {
+      const stream = await client.models.generateContentStream({
+        model: request.model,
+        contents: request.prompt,
+        config: {
+          systemInstruction: request.system,
           temperature: request.temperature,
-          maxOutputTokens: request.maxTokens
-        },
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: request.prompt }]
-          }
-        ]
-      }),
-      signal
-    });
-
-    if (!response.ok) {
-      throw new Error(await this.getProviderError('Gemini', response));
-    }
-
-    if (!response.body) {
-      throw new Error('Gemini returned an empty response body.');
-    }
-
-    let accumulated = '';
-    for await (const event of parseSSE(response.body)) {
-      if (event.data === '[DONE]') {
-        break;
-      }
-
-      let payload: Record<string, unknown>;
-      try {
-        payload = JSON.parse(event.data) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-
-      const message = this.extractGeminiError(payload);
-      if (message) {
-        throw new Error(message);
-      }
-
-      const text = this.extractGeminiText(payload);
-      if (!text) {
-        continue;
-      }
-
-      if (text.startsWith(accumulated)) {
-        const delta = text.slice(accumulated.length);
-        if (delta.length > 0) {
-          accumulated = text;
-          yield delta;
+          maxOutputTokens: request.maxTokens,
+          abortSignal: signal
         }
-        continue;
+      });
+
+      let accumulated = '';
+      for await (const chunk of stream) {
+        const blockReason = chunk.promptFeedback?.blockReason;
+        if (typeof blockReason === 'string' && blockReason.length > 0) {
+          throw new Error(`Gemini blocked this generation request: ${blockReason}.`);
+        }
+
+        const text = chunk.text ?? '';
+        if (text.length === 0) {
+          continue;
+        }
+
+        if (text.startsWith(accumulated)) {
+          const delta = text.slice(accumulated.length);
+          if (delta.length > 0) {
+            accumulated = text;
+            yield delta;
+          }
+          continue;
+        }
+
+        accumulated += text;
+        yield text;
       }
-
-      accumulated += text;
-      yield text;
+    } catch (error) {
+      const detail = error instanceof Error && error.message.length > 0 ? error.message : 'Unknown error.';
+      throw new Error(`Gemini request failed: ${detail}`);
     }
-  }
-
-  private extractGeminiText(payload: Record<string, unknown>): string {
-    if (!Array.isArray(payload.candidates) || payload.candidates.length === 0) {
-      return '';
-    }
-
-    const firstCandidate =
-      typeof payload.candidates[0] === 'object' && payload.candidates[0] !== null
-        ? (payload.candidates[0] as Record<string, unknown>)
-        : null;
-    if (!firstCandidate) {
-      return '';
-    }
-
-    const content =
-      typeof firstCandidate.content === 'object' && firstCandidate.content !== null
-        ? (firstCandidate.content as Record<string, unknown>)
-        : null;
-    if (!content || !Array.isArray(content.parts)) {
-      return '';
-    }
-
-    return content.parts
-      .filter((part): part is Record<string, unknown> => typeof part === 'object' && part !== null)
-      .map((part) => (typeof part.text === 'string' ? part.text : ''))
-      .join('');
-  }
-
-  private extractGeminiError(payload: Record<string, unknown>): string | null {
-    if (typeof payload.error !== 'object' || payload.error === null) {
-      return null;
-    }
-
-    const errorObject = payload.error as Record<string, unknown>;
-    if (typeof errorObject.message === 'string' && errorObject.message.length > 0) {
-      return errorObject.message;
-    }
-
-    return 'Unknown Gemini stream error.';
   }
 
   private requireApiKey(apiKey: string | undefined, envName: string): string {

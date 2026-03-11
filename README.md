@@ -28,7 +28,11 @@ This is the easiest way to run locally with hot reload.
 ```bash
 cp server/.env.example server/.env
 ```
-2. Add your API keys in `server/.env`: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`.
+2. Add your API keys in `server/.env`:
+   `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`.
+   For Vertex AI mode with `@google/genai`, also set:
+   `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`.
+   (`GEMINI_API_KEY` is still accepted as a legacy fallback.)
 3. Start both services:
 ```bash
 docker compose -f docker-compose.dev.yml up --build
