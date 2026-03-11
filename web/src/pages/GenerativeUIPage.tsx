@@ -153,7 +153,6 @@ function GenerativeUIPage() {
       <section className="preview-panel">
         <header>
           <h2>Sandboxed Preview</h2>
-          <p>Iframe sandbox: <code>allow-scripts</code></p>
         </header>
         <iframe
           key={previewKey}
