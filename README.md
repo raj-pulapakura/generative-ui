@@ -85,10 +85,51 @@ Response body:
 }
 ```
 
-## Useful Commands
+## My experimentation notes
 
-- `docker compose -f docker-compose.dev.yml up --build`
-- `docker compose -f docker-compose.dev.yml down`
-- `cd server && npm test`
-- `cd server && npm run build`
-- `cd web && npm run build`
+I have tested these models:
+- Openai GPT 5.2
+- Openai GPT 5.4
+- Openai GPT 5.2 Pro
+- Anthropic Sonnet 4.5
+- Anthropic Opus 4.5
+
+Of these models, Openai GPT 5.4 produced the highest quality apps.
+
+Notes on the other models:
+- Openai GPT 5.2: simply inferior to 5.4 from an output quality perspective.
+- Openai GPT 5.2 Pro: I didn't even get to verify the output of this because it took so damn long and it timed out. Not even worth trying to look at the output because the latency is so trash (like 5 mins+). And it's so bloody expensive.
+- Anthropic models: just worse than Openai from an output quality perspective.
+
+I have not tested the Gemini models yet since I'm still working out some billing stuff.
+
+### Latency
+
+In this section I'm strictly talking about my experiments with Openai GPT 5.4, since it's the best overall from what I've tested.
+
+Latency has been anywhere from 60s to 300s. Just based on looking at logs, I would estimate `P90` response time to be 90s.
+
+The main contributing factor  to latency is, of course, the model. But since we're pinning this to Openai GPT 5.4, let's not consider this.
+
+Specifically using Openai GPT 5.4, there are two parameters one can toggle: `reasoning` and `verbosity`.
+
+Generally, as you increase the reasoning and/or verbosity, latency goes up.
+
+My experience has been that setting `reasoning` and `verbosity` both to `"low"` provides *okay* results. The sweet spot I have found is setting both of these values to `"medium"`.
+
+## App quality
+
+There are many factors affecting app quality:
+
+- Type of apps requested (are they simple calculators, or more complex interactive explainers?)
+- The model
+- The system prompt (what general guidelines is the developer feeding the model? are we giving it style guides, or code generation guides?)
+- The prompt (how detailed is the prompt given by the user? they could be entering in one sentence or a whole essay)
+
+Since in this project we want to cater for:
+- Lots of different apps
+- A dumb user
+
+Our main knobs for app quality are the model and the system prompt.
+
+I've already established that Openai GPT 5.4 is the best model for app quality.

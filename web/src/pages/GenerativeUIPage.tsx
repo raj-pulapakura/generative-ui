@@ -154,12 +154,30 @@ function GenerativeUIPage() {
         <header>
           <h2>Sandboxed Preview</h2>
         </header>
-        <iframe
-          key={previewKey}
-          title="AI Generated Webpage Preview"
-          sandbox="allow-scripts"
-          srcDoc={previewDoc}
-        />
+        <div className="preview-stage">
+          <iframe
+            key={previewKey}
+            title="AI Generated Webpage Preview"
+            sandbox="allow-scripts"
+            srcDoc={previewDoc}
+          />
+          {isGenerating ? (
+            <div className="preview-loading" role="status" aria-live="polite">
+              <div className="loading-orbit" aria-hidden="true">
+                <span className="loading-core" />
+                <span className="loading-ring loading-ring-a" />
+                <span className="loading-ring loading-ring-b" />
+                <span className="loading-dot loading-dot-a" />
+                <span className="loading-dot loading-dot-b" />
+                <span className="loading-dot loading-dot-c" />
+              </div>
+              <div className="loading-caption">
+                <p>Designing your app</p>
+              </div>
+              <div className="loading-track" aria-hidden="true" />
+            </div>
+          ) : null}
+        </div>
       </section>
     </main>
   );
