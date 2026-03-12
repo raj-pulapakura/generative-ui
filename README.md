@@ -221,7 +221,7 @@ Some of the great choices look like:
 
 GPT 5.4: IMO the highest quality output, but 287 seconds (4.5 minutes) is pretty long. Again, depends on the use case. If quality is a non-negotiable and latency is not a factor, this is a good choice.
 
-### Experiment 2: "i want to learn what happens when light approaches a black hole:
+### Experiment 2: "i want to learn what happens when light approaches a black hole":
 
 <table>
   <tr>
@@ -315,7 +315,9 @@ I want to emphasise that LLM generations are non-deterministic, so for the same 
 
 Now let's get practical for a second.
 
-99.99% of apps would probably not benefit from Generative UI as a product feature.
+Probably the one and only successful use cases for Generative UI as of now are vibe-coding apps like Lovable. But this is really not just Generative UI, but fully generated and deployable apps.
+
+Other than that, 99.99% of apps would probably not benefit from Generative UI as an embeddable product feature.
 
 A real world use case I can think of:
 - A customer service chatbot which dynamically generates buttons based on a user's input/question. (even this example is up for debate, because the backend actions would already be hardcoded, so the LLM would really just be choosing which backend actions to present, and not necessarily generating novel UI)
@@ -335,7 +337,7 @@ A router-based approach makes sense. The first LLM call should be a light-weight
 
 ## Final words
 
-You *shouldn't* be using Generative UI in real-world project unless you ***reeeeeeeeally*** have no other option. Trust me, a deterministic flow is probably all you need, and it's going be a billion times cheaper and faster.
+You *shouldn't* be using Generative UI in real-world project unless you ***reeeeeeeeally*** have no other option. Trust me, a deterministic flow is probably all you need, and it's going to be a billion times cheaper and faster.
 
 But it's a darn cool idea. Maybe a nifty little portfolio website totem!
 
