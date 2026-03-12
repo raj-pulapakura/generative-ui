@@ -1,9 +1,6 @@
 # Generative UI Builder
 
-<video controls width="100%">
-  <source src="images/readme-demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+![Readme demo](images/readme-demo.gif)
 
 This project generates interactive web apps from a prompt.
 
