@@ -13,6 +13,7 @@ export interface GenerateWebpageRouteInput {
   provider: LLMProvider;
   model: string;
   prompt: string;
+  consistentDesign?: boolean;
   system?: string;
   temperature?: number;
   maxTokens?: number;

@@ -55,7 +55,7 @@ test('Anthropic webpage generation retries once on max_tokens when maxTokens is 
   const service = new WebpageGenerationService(DUMMY_STREAM_CLIENT);
   const webpage = await service.generateWebpage({
     provider: 'anthropic',
-    model: 'claude-sonnet-4-5',
+    model: 'claude-sonnet-4-6',
     prompt: 'Build an interactive color tile.'
   });
 
@@ -96,7 +96,7 @@ test('Anthropic webpage generation returns actionable error when user maxTokens 
     () =>
       service.generateWebpage({
         provider: 'anthropic',
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4-6',
         prompt: 'Build an interactive color tile.',
         maxTokens: 3000
       }),

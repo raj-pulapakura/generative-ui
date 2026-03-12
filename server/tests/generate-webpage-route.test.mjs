@@ -45,6 +45,30 @@ test('POST /api/llm/generate-webpage rejects malformed model output', async (t) 
   assert.match(body.error, /non-empty string/i);
 });
 
+test('POST /api/llm/generate-webpage rejects invalid consistentDesign values', async (t) => {
+  const server = await startServer({
+    LLM_GENERATE_WEBPAGE_MOCK_RESPONSE: JSON.stringify({
+      html: '<main>ok</main>',
+      css: 'main { color: #111; }',
+      js: 'console.log("ok");'
+    })
+  });
+  t.after(() => server.stop());
+
+  const response = await fetch(`${server.baseUrl}/api/llm/generate-webpage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: 'Build a click counter.',
+      consistentDesign: 'yes'
+    })
+  });
+
+  assert.equal(response.status, 400);
+  const body = await response.json();
+  assert.match(body.error, /consistentDesign/i);
+});
+
 test('POST /api/llm/generate-webpage returns html/css/js on success', async (t) => {
   const server = await startServer({
     LLM_GENERATE_WEBPAGE_MOCK_RESPONSE: JSON.stringify({
@@ -58,7 +82,10 @@ test('POST /api/llm/generate-webpage returns html/css/js on success', async (t) 
   const response = await fetch(`${server.baseUrl}/api/llm/generate-webpage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: 'Build a compound interest calculator.' })
+    body: JSON.stringify({
+      prompt: 'Build a compound interest calculator.',
+      consistentDesign: true
+    })
   });
 
   assert.equal(response.status, 200);

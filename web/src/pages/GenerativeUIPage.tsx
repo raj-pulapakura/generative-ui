@@ -13,6 +13,7 @@ function GenerativeUIPage() {
   const [provider, setProvider] = useState<Provider>('openai');
   const [model, setModel] = useState(MODEL_OPTIONS.openai[0]);
   const [prompt, setPrompt] = useState('');
+  const [consistentDesign, setConsistentDesign] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
   const [previewDoc, setPreviewDoc] = useState(composePlaceholderDocument());
@@ -43,7 +44,8 @@ function GenerativeUIPage() {
         body: JSON.stringify({
           provider,
           model,
-          prompt: trimmedPrompt
+          prompt: trimmedPrompt,
+          consistentDesign
         })
       });
 
@@ -122,6 +124,27 @@ function GenerativeUIPage() {
               required
               disabled={isGenerating}
             />
+          </label>
+
+          <label className="design-toggle">
+            <span className="design-toggle-copy">
+              <span className="design-toggle-title">Consistent design</span>
+              <span className="design-toggle-subtext">
+                Keep generated apps aligned with the main workspace’s palette, typography, surfaces,
+                and control styling.
+              </span>
+            </span>
+            <span className="design-toggle-switch">
+              <input
+                type="checkbox"
+                checked={consistentDesign}
+                onChange={(event) => setConsistentDesign(event.target.checked)}
+                disabled={isGenerating}
+              />
+              <span className="design-toggle-slider" aria-hidden="true">
+                <span className="design-toggle-thumb" />
+              </span>
+            </span>
           </label>
 
           <button type="submit" disabled={isGenerating || prompt.trim().length === 0}>

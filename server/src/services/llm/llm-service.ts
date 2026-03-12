@@ -20,7 +20,7 @@ interface SSEEvent {
 
 export const DEFAULT_MODELS: Record<LLMProvider, string> = {
   openai: process.env.OPENAI_MODEL?.trim() || 'gpt-5.4',
-  anthropic: process.env.ANTHROPIC_MODEL?.trim() || 'claude-sonnet-4-5',
+  anthropic: process.env.ANTHROPIC_MODEL?.trim() || 'claude-sonnet-4-6',
   gemini: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash'
 };
 

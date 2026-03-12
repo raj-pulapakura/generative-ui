@@ -41,6 +41,7 @@ export function parseGenerateWebpageRouteInput(
   }
 
   const model = parseOptionalString(body.model, 'model') || resolveDefaultModel(provider, options.modelOverride);
+  const consistentDesign = parseOptionalBoolean(body.consistentDesign, 'consistentDesign');
   const system = parseOptionalString(body.system, 'system');
   const temperature = parseOptionalFiniteNumber(body.temperature, 'temperature');
   const maxTokens = parseOptionalPositiveInt(body.maxTokens, 'maxTokens');
@@ -49,6 +50,7 @@ export function parseGenerateWebpageRouteInput(
     provider,
     model,
     prompt,
+    consistentDesign,
     system,
     temperature,
     maxTokens
@@ -103,6 +105,18 @@ function parseOptionalFiniteNumber(value: unknown, fieldName: string): number | 
 
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new HttpError(400, `${fieldName} must be a finite number.`);
+  }
+
+  return value;
+}
+
+function parseOptionalBoolean(value: unknown, fieldName: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== 'boolean') {
+    throw new HttpError(400, `${fieldName} must be a boolean.`);
   }
 
   return value;

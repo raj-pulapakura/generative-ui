@@ -1,10 +1,16 @@
 import type { StreamTextRequest } from '../llm/llm-service.js';
 import { createGeminiClientFromEnv } from '../llm/gemini-client.js';
+import {
+  buildGeneratedWebpagePrompt,
+  getGeneratedWebpageSystemPrompt,
+  GENERATED_WEBPAGE_RETRY_CONCISION_HINT,
+} from './webpage-generation-prompt.js';
 
 export interface GenerateWebpageRequest {
   provider: StreamTextRequest['provider'];
   model: string;
   prompt: string;
+  consistentDesign?: boolean;
   system?: string;
   temperature?: number;
   maxTokens?: number;
@@ -27,21 +33,6 @@ export interface TextStreamingClient {
   streamText(request: StreamTextRequest, signal?: AbortSignal): AsyncGenerator<string>;
 }
 
-const GENERATED_WEBPAGE_SYSTEM_PROMPT = [
-  'You generate runnable single-file web apps.',
-  'Output must be valid JSON with exactly these top-level string keys: html, css, js.',
-  'Do not wrap in markdown code fences.',
-  'HTML should be body-safe markup only (no <html>, <head>, or <body> tags).',
-  'CSS should style the generated HTML only.',
-  'JavaScript should make the page interactive and run in a browser without external libraries.',
-  'Design bias: visual-first, not text-first.',
-  'Keep on-screen text minimal: short labels, short headings, no long paragraphs.',
-  'Prioritize interactivity over explanation.',
-  'Include direct manipulation controls (for example sliders, toggles, drag, hover, clickable cards, animated states).',
-  'Every generated page should have at least two interactive UI elements with immediate visual feedback.',
-  'Prefer visual communication (motion, color, layout change, charts/indicators made with native HTML/CSS/SVG/canvas) over descriptive text.'
-].join(' ');
-
 const GENERATED_WEBPAGE_MAX_CHARS = 150_000;
 const GENERATED_WEBPAGE_PART_MAX_CHARS = 60_000;
 const GENERATED_WEBPAGE_DEFAULT_MAX_TOKENS = 16_384;
@@ -52,8 +43,6 @@ const GENERATED_WEBPAGE_OPENAI_VERBOSITY = 'medium'; // also effects output qual
 const GENERATED_WEBPAGE_ANTHROPIC_DEFAULT_MAX_TOKENS = 8_192;
 const GENERATED_WEBPAGE_ANTHROPIC_RETRY_MAX_TOKENS = 16_384;
 const GENERATED_WEBPAGE_GEMINI_RETRY_MAX_TOKENS = 65_535;
-const GENERATED_WEBPAGE_RETRY_CONCISION_HINT =
-  'Retry requirement: keep the implementation concise. Avoid comments and keep total HTML/CSS/JS under roughly 12,000 characters.';
 const WEBPAGE_OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -80,9 +69,10 @@ export class WebpageGenerationService {
     const hasUserDefinedMaxTokens = typeof request.maxTokens === 'number';
     const maxTokens = request.maxTokens ?? defaultMaxTokensForProvider(request.provider);
     const prompt = buildGeneratedWebpagePrompt(request.prompt);
+    const systemPrompt = getGeneratedWebpageSystemPrompt(request.consistentDesign);
     const system = request.system
-      ? `${GENERATED_WEBPAGE_SYSTEM_PROMPT}\n\nAdditional constraints from caller:\n${request.system}`
-      : GENERATED_WEBPAGE_SYSTEM_PROMPT;
+      ? `${systemPrompt}\n\nAdditional constraints from caller:\n${request.system}`
+      : systemPrompt;
 
     if (request.provider === 'openai') {
       return this.generateOpenAIStructuredWebpageWithRetry(
@@ -567,21 +557,6 @@ function extractOpenAIRefusalReason(output: OpenAIWebpageResponse['output']): st
   }
 
   return null;
-}
-
-function buildGeneratedWebpagePrompt(userPrompt: string): string {
-  return [
-    'Build a self-contained interactive webpage for this request:',
-    userPrompt.trim(),
-    '',
-    'Behavior goals:',
-    '- Visual-first UI with strong aesthetics.',
-    '- Minimal text content.',
-    '- Interaction-first experience with immediate visual feedback.',
-    '',
-    'Return JSON only with keys: html, css, js.',
-    'Do not include explanations.'
-  ].join('\n');
 }
 
 function parseGeneratedWebpagePayload(rawOutput: string): GeneratedWebpage {

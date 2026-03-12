@@ -133,6 +133,7 @@ export class LlmController {
       provider: requestInput.provider,
       model: requestInput.model,
       promptLength: requestInput.prompt.length,
+      consistentDesign: requestInput.consistentDesign ?? false,
       maxTokens: requestInput.maxTokens
     });
 
