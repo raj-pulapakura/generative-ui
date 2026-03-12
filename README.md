@@ -1,5 +1,10 @@
 # Generative UI Builder
 
+<video controls width="100%">
+  <source src="images/readme-demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
 This project generates interactive web apps from a prompt.
 
 You type something like:
@@ -12,7 +17,7 @@ The server calls an LLM and returns structured JSON:
 - `css`
 - `js`
 
-The web client renders that output inside a sandboxed iframe (`allow-scripts`) so users can interact with the generated app safely.
+The web client renders that output inside a sandboxed iframe.
 
 ## Table of Contents
 
@@ -33,7 +38,7 @@ The web client renders that output inside a sandboxed iframe (`allow-scripts`) s
 
 ## Required Environment Variables
 
-If you want all three providers available locally, create `server/.env` and set these three API keys:
+If you want all three providers available locally, create `server/.env` and set the three provider API keys plus the Google mode flag:
 
 ```bash
 cp server/.env.example server/.env
@@ -43,13 +48,16 @@ cp server/.env.example server/.env
 OPENAI_API_KEY=your_openai_api_key_here
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 GOOGLE_API_KEY=your_google_api_key_here
+GOOGLE_GENAI_USE_VERTEXAI=false
 ```
 
 - `OPENAI_API_KEY`: enables OpenAI models.
 - `ANTHROPIC_API_KEY`: enables Anthropic Claude models.
 - `GOOGLE_API_KEY`: enables Google Gemini models.
+- `GOOGLE_GENAI_USE_VERTEXAI`: toggles Google Vertex AI mode on or off.
 
-For Vertex AI mode with `@google/genai`, also set `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, and `GOOGLE_CLOUD_LOCATION`.
+For Google in this repo, the main env vars to care about are `GOOGLE_API_KEY` and `GOOGLE_GENAI_USE_VERTEXAI`.
+`GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` are optional in this codebase, not required.
 
 ## Quick Start (Docker Dev)
 
@@ -59,8 +67,8 @@ This is the easiest way to run locally with hot reload.
 ```bash
 cp server/.env.example server/.env
 ```
-2. Add the required API keys to `server/.env`:
-   `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GOOGLE_API_KEY`.
+2. Add the required env vars to `server/.env`:
+   `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, and `GOOGLE_GENAI_USE_VERTEXAI`.
    See [Required Environment Variables](#required-environment-variables) for an example.
    (`GEMINI_API_KEY` is still accepted as a legacy fallback.)
 3. Start both services:
@@ -76,11 +84,11 @@ docker compose -f docker-compose.dev.yml up --build
 cd server && npm install
 cd ../web && npm install
 ```
-2. Configure env and add the required API keys:
+2. Configure env and add the required env vars:
 ```bash
 cp server/.env.example server/.env
 ```
-   Then populate `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GOOGLE_API_KEY` in `server/.env`.
+   Then populate `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, and `GOOGLE_GENAI_USE_VERTEXAI` in `server/.env`.
 3. Start backend:
 ```bash
 cd server
